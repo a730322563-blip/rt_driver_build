@@ -139,6 +139,8 @@ struct file_operations dispatch_functions = {
     .unlocked_ioctl = dispatch_ioctl,
 };
 
+int resolve_hwbp_symbols(void);
+
 static int __init driver_entry(void) {
     int ret;
 
