@@ -16,6 +16,47 @@
 #include <linux/uaccess.h>
 #include <asm/ptrace.h>
 #include <asm/current.h>
+#include <linux/kprobes.h>
+
+/* 函数指针类型 */
+typedef int (*reg_user_hwbp_t)(struct perf_event_attr *attr,
+                               perf_overflow_handler_t triggered,
+                               void *context,
+                               struct task_struct *tsk);
+typedef void (*unreg_hwbp_t)(struct perf_event *bp);
+
+/* 全局函数指针，用 p_ 前缀区分原函数 */
+static reg_user_hwbp_t p_register_user_hw_breakpoint;
+static unreg_hwbp_t p_unregister_hw_breakpoint;
+
+/* 使用 kprobe 动态解析未导出符号地址 */
+static int resolve_hwbp_symbols(void)
+{
+    struct kprobe kp;
+    int ret;
+
+    memset(&kp, 0, sizeof(kp));
+    kp.symbol_name = "register_user_hw_breakpoint";
+    ret = register_kprobe(&kp);
+    if (ret < 0) {
+        pr_err("resolve register_user_hw_breakpoint failed: %d\n", ret);
+        return ret;
+    }
+    p_register_user_hw_breakpoint = (reg_user_hwbp_t)kp.addr;
+    unregister_kprobe(&kp);
+
+    memset(&kp, 0, sizeof(kp));
+    kp.symbol_name = "unregister_hw_breakpoint";
+    ret = register_kprobe(&kp);
+    if (ret < 0) {
+        pr_err("resolve unregister_hw_breakpoint failed: %d\n", ret);
+        return ret;
+    }
+    p_unregister_hw_breakpoint = (unreg_hwbp_t)kp.addr;
+    unregister_kprobe(&kp);
+
+    return 0;
+}
 
 /* ===== ioctl 命令码 ===== */
 #define OP_HWBP_INSTALL    0x820
@@ -79,15 +120,11 @@ static void hwbp_modify_fp(struct pt_regs *regs)
     }
 }
 
-/* ===== 断点回调函数 =====
- * 硬件断点触发时调用，在中断上下文
- * regs 是被断点打断时的寄存器状态
- */
+/* ===== 断点回调函数 ===== */
 static void hwbp_handler(struct perf_event *bp,
                          struct perf_sample_data *data,
                          struct pt_regs *regs)
 {
-    /* 只处理目标进程 */
     if (current->pid != g_hwbp_state.pid)
         return;
 
@@ -95,15 +132,7 @@ static void hwbp_handler(struct perf_event *bp,
         return;
 
     g_hwbp_state.hit_count++;
-
-    /* 改写 V3/V4/V5 */
     hwbp_modify_fp(regs);
-
-    /*
-     * Linux hw_breakpoint 框架会自动处理单步：
-     * 回调返回后，内核会设置单步标志，执行完一条指令后重新启用断点。
-     * 不需要手动操作。
-     */
 }
 
 /* ===== 安装硬件断点 ===== */
@@ -122,21 +151,19 @@ static int hwbp_do_install(struct hwbp_install_req *req)
         return -ESRCH;
     }
 
-    /* 配置断点属性 */
     hw_breakpoint_init(&attr);
     attr.bp_addr = req->addr;
-    attr.bp_len = HW_BREAKPOINT_LEN_4;   /* ARM64 指令4字节 */
-    attr.bp_type = HW_BREAKPOINT_X;      /* 执行断点 */
+    attr.bp_len = HW_BREAKPOINT_LEN_4;
+    attr.bp_type = HW_BREAKPOINT_X;
     attr.exclude_kernel = 1;
     attr.exclude_hv = 1;
 
-    /* 注册用户态硬件断点，绑定到目标任务 */
     g_hwbp_state.bp_event =
-        register_user_hw_breakpoint(&attr, hwbp_handler, NULL, tsk);
+        p_register_user_hw_breakpoint(&attr, hwbp_handler, NULL, tsk);
 
     if (IS_ERR(g_hwbp_state.bp_event)) {
         ret = PTR_ERR(g_hwbp_state.bp_event);
-        pr_err("hwbp: register_user_hw_breakpoint failed: %d\n", ret);
+        pr_err("hwbp: p_register_user_hw_breakpoint failed: %d\n", ret);
         g_hwbp_state.bp_event = NULL;
         return ret;
     }
@@ -159,7 +186,7 @@ static void hwbp_do_remove(void)
         return;
 
     if (g_hwbp_state.bp_event) {
-        unregister_hw_breakpoint(g_hwbp_state.bp_event);
+        p_unregister_hw_breakpoint(g_hwbp_state.bp_event);
         g_hwbp_state.bp_event = NULL;
     }
 
@@ -176,10 +203,8 @@ static void hwbp_set_pause(bool pause)
     g_hwbp_state.paused = pause;
 
     if (pause) {
-        /* 临时禁用断点事件 */
         perf_event_disable(g_hwbp_state.bp_event);
     } else {
-        /* 重新启用 */
         perf_event_enable(g_hwbp_state.bp_event);
     }
 }
