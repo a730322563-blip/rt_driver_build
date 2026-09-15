@@ -15,7 +15,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl build-essential libssl-dev libelf-dev bison flex python3
+        sudo apt-get install -y git curl build-essential libssl-dev libelf-dev bison flex python3 clang lld llvm bc
         mkdir -p ~/bin
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
