@@ -16,6 +16,10 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y git curl build-essential libssl-dev libelf-dev bison flex python3
+        mkdir -p ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "$HOME/bin" >> $GITHUB_PATH
 
     - name: Download Kernel Source
       run: |
