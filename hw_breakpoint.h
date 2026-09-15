@@ -1,4 +1,4 @@
-/*
+ *
  * 硬件断点追踪模块
  * 使用 Linux hw_breakpoint 框架（ARM64 调试寄存器 BRP0-15）
  * 原理：在目标地址注册执行断点 → CPU 执行到该地址触发调试异常 → 回调中改写 V3/V4/V5 → 内核自动单步跳过 → 继续
@@ -19,10 +19,10 @@
 #include <linux/kprobes.h>
 
 /* 函数指针类型 */
-typedef int (*reg_user_hwbp_t)(struct perf_event_attr *attr,
-                               perf_overflow_handler_t triggered,
-                               void *context,
-                               struct task_struct *tsk);
+typedef struct perf_event *(*reg_user_hwbp_t)(struct perf_event_attr *attr,
+                                              perf_overflow_handler_t triggered,
+                                              void *context,
+                                              struct task_struct *tsk);
 typedef void (*unreg_hwbp_t)(struct perf_event *bp);
 
 /* 全局函数指针，用 p_ 前缀区分原函数 */
