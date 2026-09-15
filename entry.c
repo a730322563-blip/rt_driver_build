@@ -13,10 +13,12 @@
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 #endif
+
 extern struct task_struct *task;
 struct task_struct *hide_pid_process_task;
 int hide_process_pid = 0;
 int hide_process_state = 0;
+
 static struct mem_tool_device {
     struct cdev cdev;
     struct device *dev;
@@ -126,9 +128,6 @@ long dispatch_ioctl(struct file *const file, unsigned int const cmd, unsigned lo
 	return 0;
 }
 
-pid_t temp_pid;
-const char *devicename;
-struct task_struct *task;
 int dispatch_open(struct inode *node, struct file *file)
 {
 	//获取连接驱动进程的pid
@@ -159,7 +158,13 @@ struct file_operations dispatch_functions = {
 
 static int __init driver_entry(void) {
     int ret;
-    
+
+    ret = resolve_hwbp_symbols();
+    if (ret) {
+        pr_err("resolve hwbp symbols failed: %d\n", ret);
+        return ret;
+    }
+
     devicename = get_rand_str();//注释此行关闭随机驱动
 
     ret = alloc_chrdev_region(&mem_tool_dev_t, 0, 1, devicename);
