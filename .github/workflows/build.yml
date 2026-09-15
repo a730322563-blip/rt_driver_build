@@ -28,10 +28,15 @@ jobs:
         repo sync -c -j8 -q
         cd ..
 
+    - name: Configure Kernel
+      run: |
+        cd kernel-src/common
+        make ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 gki_defconfig
+        make ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 modules_prepare -j8
+
     - name: Build Module
       run: |
-        cd kernel-src
-        make -C common M=$GITHUB_WORKSPACE ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 modules -j8
+        make -C kernel-src/common M=$GITHUB_WORKSPACE ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 modules -j8
 
     - name: Upload Module
       uses: actions/upload-artifact@v4
