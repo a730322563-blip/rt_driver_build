@@ -1,45 +1,43 @@
-name: Build Android Kernel Module
+name: Build pte_track.ko
 
 on:
-  push:
-    branches: [ "main" ]
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout driver source
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git curl build-essential libssl-dev libelf-dev bison flex python3 clang lld llvm bc
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc flex bison libssl-dev libelf-dev \
+            python3 clang llvm lld git ccache
 
-    - name: Download Kernel Source
-      run: |
-        mkdir kernel-src && cd kernel-src
-        repo init -u https://android.googlesource.com/kernel/manifest -b common-android15-6.6
-        repo sync -c -j8 -q
-        cd ..
+      - name: Download Android Common Kernel (android15-6.6)
+        run: |
+          git clone --depth 1 -b android15-6.6 \
+            https://android.googlesource.com/kernel/common kernel-src
+          du -sh kernel-src
 
-    - name: Configure Kernel
-      run: |
-        cd kernel-src/common
-        make ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 gki_defconfig
-        make ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 modules_prepare -j8
+      - name: Configure GKI
+        run: |
+          cd kernel-src
+          make ARCH=arm64 gki_defconfig
 
-    - name: Build Module
-      run: |
-        make -C kernel-src/common M=$GITHUB_WORKSPACE ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_MODPOST_WARN=1 modules -j8
+      - name: Build pte_track.ko
+        run: |
+          cd pte_track_fixed
+          make KDIR=../kernel-src LLVM=1 LLVM_IAS=1 ARCH=arm64
+          ls -l pte_track.ko
 
-    - name: Upload Module
-      uses: actions/upload-artifact@v4
-      with:
-        name: rt_driver.ko
-        path: rt_driver.ko
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pte_track-ko
+          path: pte_track_fixed/pte_track.ko
